@@ -1,9 +1,11 @@
 import base64
 import os
+import tempfile
 from io import BytesIO
 
 import torch
 import whisper
+from pydub import AudioSegment
 
 
 # Init is ran on server startup
@@ -20,18 +22,27 @@ def inference(model_inputs: dict) -> dict:
     global model
 
     # Parse out your arguments
-    mp3BytesString = model_inputs.get("mp3BytesString", None)
     initial_prompt = model_inputs.get("initial_prompt", None)
+    audio_bytes_str = model_inputs.get("audio_bytes_str", None)
+    audio_format = model_inputs.get(
+        "audio_format", None
+    )  # Expected to be something like mp3 or m4a
+    num_speakers = model_inputs.get("num_speakers", None)
 
-    if mp3BytesString == None:
-        return {"message": "No input provided"}
+    if audio_bytes_str is None or audio_format is None:
+        return {"message": "Missing audio_bytes_str or audio_format"}
 
-    mp3Bytes = BytesIO(base64.b64decode(mp3BytesString.encode("ISO-8859-1")))
-    with open("input.mp3", "wb") as file:
-        file.write(mp3Bytes.getbuffer())
+    # Convert audio to mp3
+    audio_bytes = BytesIO(base64.b64decode(audio_bytes_str.encode("ISO-8859-1")))
+    audio_segment_input = AudioSegment.from_file(audio_bytes, format=audio_format)
+
+    t_file = tempfile.NamedTemporaryFile(suffix=".mp3")
+    audio_segment_input.export(t_file.name, format="mp3")
 
     # Run the model
-    result = model.transcribe("input.mp3", initial_prompt=initial_prompt)
-    os.remove("input.mp3")
+    result = model.transcribe(t_file.name, initial_prompt=initial_prompt)
+
+    t_file.close()
+
     # Return the results as a dictionary
     return result
